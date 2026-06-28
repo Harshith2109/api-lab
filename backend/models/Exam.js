@@ -46,7 +46,7 @@ const ExamSchema = new mongoose.Schema({
     type: String
   },
   instructor_id: {
-    type: Number,
+    type: String,
     required: true
   },
   duration: {
@@ -63,7 +63,7 @@ const ExamSchema = new mongoose.Schema({
   },
   questions: [QuestionSchema],
   eligible_students: [{
-    type: Number
+    type: String
   }],
   is_active: {
     type: Boolean,

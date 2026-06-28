@@ -1,8 +1,6 @@
 const Exam = require('../models/Exam');
 const Attempt = require('../models/Attempt');
-const MoodleAPIClient = require('../moodle_api/client');
-
-const moodleClient = new MoodleAPIClient(process.env.MOODLE_URL, process.env.MOODLE_TOKEN);
+const User = require('../models/User');
 
 exports.initStudent = async (req, res) => {
   try {
@@ -11,15 +9,14 @@ exports.initStudent = async (req, res) => {
       return res.status(400).json({ error: 'student_id required' });
     }
 
-    const profile = await moodleClient.getUserProfile(student_id);
-    const moodleUser = profile[0] || {};
+    const user = await User.findOne({ $or: [{ userId: String(student_id) }, { username: String(student_id) }] });
 
     return res.status(200).json({
       message: 'Student initialized',
       student: {
-        student_id: parseInt(student_id),
-        name: moodleUser.fullname || 'Student',
-        email: moodleUser.email || 'unknown'
+        student_id: String(student_id),
+        name: user ? user.fullname : 'Student',
+        email: user ? user.email : 'unknown'
       }
     });
   } catch (err) {
@@ -29,7 +26,7 @@ exports.initStudent = async (req, res) => {
 
 exports.getAvailableExams = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const { instructor_id } = req.body;
 
     if (!instructor_id) {
@@ -38,7 +35,7 @@ exports.getAvailableExams = async (req, res) => {
 
     // Find all active exams for this instructor where student is eligible
     const exams = await Exam.find({
-      instructor_id: parseInt(instructor_id),
+      instructor_id: String(instructor_id),
       is_active: true,
       eligible_students: student_id
     });
@@ -55,7 +52,7 @@ exports.getAvailableExams = async (req, res) => {
 
 exports.startExam = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const exam_id = parseInt(req.params.exam_id);
     const { instructor_id } = req.body;
 
@@ -63,7 +60,7 @@ exports.startExam = async (req, res) => {
       return res.status(400).json({ error: 'instructor_id required' });
     }
 
-    const exam = await Exam.findOne({ exam_id, instructor_id: parseInt(instructor_id) });
+    const exam = await Exam.findOne({ exam_id, instructor_id: String(instructor_id) });
     if (!exam) {
       return res.status(404).json({ error: 'Exam not found' });
     }
@@ -116,7 +113,7 @@ exports.startExam = async (req, res) => {
 
 exports.submitAnswer = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const exam_id = parseInt(req.params.exam_id);
     const { attempt_id, question_id, answer } = req.body;
 
@@ -148,7 +145,7 @@ exports.submitAnswer = async (req, res) => {
 
 exports.getTimeRemaining = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const exam_id = parseInt(req.params.exam_id);
     const attempt_id = parseInt(req.query.attempt_id);
 
@@ -181,7 +178,7 @@ exports.getTimeRemaining = async (req, res) => {
 
 exports.submitExam = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const exam_id = parseInt(req.params.exam_id);
     const { attempt_id, instructor_id } = req.body;
 
@@ -189,7 +186,7 @@ exports.submitExam = async (req, res) => {
       return res.status(400).json({ error: 'attempt_id and instructor_id required' });
     }
 
-    const exam = await Exam.findOne({ exam_id, instructor_id: parseInt(instructor_id) });
+    const exam = await Exam.findOne({ exam_id, instructor_id: String(instructor_id) });
     if (!exam) {
       return res.status(404).json({ error: 'Exam not found' });
     }
@@ -263,12 +260,41 @@ exports.submitExam = async (req, res) => {
 
 exports.getStudentAttempts = async (req, res) => {
   try {
-    const student_id = parseInt(req.params.student_id);
+    const student_id = String(req.params.student_id);
     const attempts = await Attempt.find({ student_id });
     return res.status(200).json({
       message: 'Attempts retrieved',
       count: attempts.length,
       attempts
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getOngoingExams = async (req, res) => {
+  try {
+    const { search } = req.query;
+    let query = { is_active: true };
+
+    const exams = await Exam.find(query);
+    let filteredExams = exams;
+
+    if (search) {
+      const s = search.toLowerCase();
+      filteredExams = exams.filter(e =>
+        e.exam_name.toLowerCase().includes(s) ||
+        String(e.course_id).toLowerCase().includes(s) ||
+        String(e.exam_id).toLowerCase().includes(s) ||
+        String(e.instructor_id).toLowerCase().includes(s) ||
+        e.eligible_students.some(id => String(id).toLowerCase().includes(s))
+      );
+    }
+
+    return res.status(200).json({
+      message: 'Ongoing exams retrieved',
+      count: filteredExams.length,
+      exams: filteredExams
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

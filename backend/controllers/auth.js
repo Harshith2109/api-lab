@@ -45,8 +45,8 @@ exports.login = async (req, res) => {
 exports.register = async (req, res) => {
   try {
     const { username, password, role, fullname, email, userId } = req.body;
-    if (!username || !password || !fullname || !userId) {
-      return res.status(400).json({ error: 'Required fields: username, password, fullname, userId' });
+    if (!username || !password || !fullname) {
+      return res.status(400).json({ error: 'Required fields: username, password, fullname' });
     }
 
     // Check if user already exists
@@ -55,9 +55,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Username already exists' });
     }
 
-    const existingUserId = await User.findOne({ userId });
-    if (existingUserId) {
-      return res.status(400).json({ error: 'User ID already exists' });
+    if (userId !== undefined && userId !== null) {
+      const existingUserId = await User.findOne({ userId });
+      if (existingUserId) {
+        return res.status(400).json({ error: 'User ID already exists' });
+      }
     }
 
     const newUser = new User({

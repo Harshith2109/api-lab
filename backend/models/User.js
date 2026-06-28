@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const UserSchema = new mongoose.Schema({
   username: {
@@ -26,14 +27,20 @@ const UserSchema = new mongoose.Schema({
     trim: true
   },
   userId: {
-    type: Number,
+    type: String,
     required: true,
     unique: true
   }
 }, { timestamps: true });
 
-// Pre-save hook to hash password
-UserSchema.pre('save', async function(next) {
+// Pre-save hook to hash password and ensure userId is an auto-assigned human-readable ID if missing
+UserSchema.pre('save', async function (next) {
+  if (!this.userId) {
+    const prefix = this.role === 'admin' ? 'USR-ADM' : this.role === 'instructor' ? 'USR-INS' : 'USR-STU';
+    const randomNum = Math.floor(100 + Math.random() * 900);
+    this.userId = `${prefix}-${randomNum}`;
+  }
+
   if (!this.isModified('password')) return next();
   try {
     const salt = await bcrypt.genSalt(10);
@@ -45,7 +52,7 @@ UserSchema.pre('save', async function(next) {
 });
 
 // Method to verify passwords
-UserSchema.methods.comparePassword = async function(candidatePassword) {
+UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 

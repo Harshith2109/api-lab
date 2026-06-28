@@ -34,6 +34,10 @@ app.post('/api/auth/register', authController.register);
 // ==================== ADMIN ROUTES ====================
 app.get('/api/admin/users', protect, authorize('admin'), adminController.getUsers);
 app.post('/api/admin/users', protect, authorize('admin'), adminController.createUser);
+app.delete('/api/admin/users/:user_id', protect, authorize('admin'), adminController.deleteUser);
+app.get('/api/admin/exams', protect, authorize('admin'), adminController.getAllExams);
+app.put('/api/admin/exams/:exam_id/stop', protect, authorize('admin'), adminController.stopExam);
+app.delete('/api/admin/exams/:exam_id', protect, authorize('admin'), adminController.deleteExam);
 
 // ==================== INSTRUCTOR ENDPOINTS ====================
 app.post('/api/instructor/init', instructorController.initInstructor);
@@ -50,6 +54,7 @@ app.get('/api/instructor/:instructor_id/exams', instructorController.getExams);
 
 // ==================== STUDENT ENDPOINTS ====================
 app.post('/api/student/init', studentController.initStudent);
+app.get('/api/student/exams/ongoing', studentController.getOngoingExams);
 app.post('/api/student/:student_id/exams/available', studentController.getAvailableExams);
 app.post('/api/student/:student_id/exams/:exam_id/start', studentController.startExam);
 app.post('/api/student/:student_id/exams/:exam_id/submit-answer', studentController.submitAnswer);

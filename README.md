@@ -11,7 +11,8 @@ Welcome to the **Moodle-Integrated Online Exam System**. This repository houses 
 4. [Backend API Routes](#-backend-api-routes)
 5. [Database Models](#-database-models)
 6. [Frontend Features](#-frontend-features)
-7. [Installation & Setup](#-installation--setup)
+7. [Environment Variables](#️-environment-variables)
+8. [Installation & Setup](#-installation--setup)
 
 ---
 
@@ -51,9 +52,9 @@ mern-app/
 │   ├── config/
 │   │   └── db.js            # MongoDB connection logic & user auto-seeding
 │   ├── controllers/
-│   │   ├── admin.js         # User administration handlers
+│   │   ├── admin.js         # User administration & global exam management handlers
 │   │   ├── auth.js          # Authentication (login/register) handlers
-│   │   ├── instructor.js    # Exam creation, question management, activation handlers
+│   │   ├── instructor.js    # Exam creation, question management, student enrollment handlers
 │   │   └── student.js       # Exam attempt, answer submission, timer, auto-grading handlers
 │   ├── middleware/
 │   │   └── auth.js          # JWT verification & role authorization middleware
@@ -63,12 +64,14 @@ mern-app/
 │   │   └── User.js          # Mongoose schema for user accounts with password hashing
 │   ├── moodle_api/
 │   │   └── client.js        # Moodle API web service request client wrapper
+│   ├── .env                 # Backend environment configuration
 │   ├── app.js               # Express application entry point & API endpoints
 │   └── users.json           # Default seed user dataset
 └── frontend/
     ├── src/
     │   ├── App.jsx          # Main React component containing role dashboards
-    │   ├── App.css          # Core application styles & dark mode UI components
+    │   ├── App.css          # Core application component styling
+    │   ├── index.css        # Global CSS Reset & utility styles
     │   └── main.jsx         # Application mounting point
     ├── package.json         # Frontend dependencies & scripts
     └── vite.config.js       # Vite build setup
@@ -99,19 +102,28 @@ When the backend starts, it checks MongoDB and automatically seeds the following
 ### 👑 Admin Endpoints (Protected: `admin`)
 * `GET /api/admin/users` - Fetch list of all registered users.
 * `POST /api/admin/users` - Register a new user with a specific role.
+* `DELETE /api/admin/users/:user_id` - Delete a user account.
+* `GET /api/admin/exams` - Fetch all exams across the system.
+* `PUT /api/admin/exams/:exam_id/stop` - Force stop/deactivate an active exam.
+* `DELETE /api/admin/exams/:exam_id` - Delete an exam.
 
 ### 👨‍🏫 Instructor Endpoints
 * `POST /api/instructor/init` - Initialize instructor workspace.
 * `GET /api/instructor/:instructor_id/exams` - List instructor's exams.
 * `POST /api/instructor/:instructor_id/exams` - Create a new exam.
+* `GET /api/instructor/:instructor_id/exams/:exam_id` - Fetch details for a specific exam.
+* `PUT /api/instructor/:instructor_id/exams/:exam_id` - Update exam metadata.
+* `GET /api/instructor/:instructor_id/exams/:exam_id/questions` - List questions belonging to an exam.
 * `POST /api/instructor/:instructor_id/exams/:exam_id/questions` - Add question to an exam.
+* `POST /api/instructor/:instructor_id/exams/:exam_id/students` - Assign eligible students to an exam.
 * `PUT /api/instructor/:instructor_id/exams/:exam_id/activate` - Publish/activate exam.
 * `PUT /api/instructor/:instructor_id/exams/:exam_id/deactivate` - Unpublish/deactivate exam.
 * `GET /api/instructor/:instructor_id/exams/:exam_id/attempts` - View student submission attempts and scores.
 
 ### 🎓 Student Endpoints
 * `POST /api/student/init` - Initialize student dashboard.
-* `POST /api/student/:student_id/exams/available` - Fetch available active exams.
+* `GET /api/student/exams/ongoing` - Fetch all currently ongoing/active exams.
+* `POST /api/student/:student_id/exams/available` - Fetch available active exams for the student.
 * `POST /api/student/:student_id/exams/:exam_id/start` - Start an exam attempt.
 * `POST /api/student/:student_id/exams/:exam_id/submit-answer` - Save individual answer.
 * `GET /api/student/:student_id/exams/:exam_id/time-remaining` - Get remaining exam timer seconds.
@@ -136,6 +148,24 @@ When the backend starts, it checks MongoDB and automatically seeds the following
 * **Role-Based Views**: Dynamic rendering of tailored interfaces depending on the logged-in user's role.
 * **Exam Management Builder**: Easy-to-use forms for instructors to configure exams and attach questions.
 * **Interactive Exam Runner**: Includes single/multiple choice options, live status banners, timer enforcement, and instant evaluation.
+
+---
+
+## ⚙️ Environment Variables
+
+The backend relies on the following environment variables (configured in `backend/.env`):
+
+```env
+PORT=5000
+MONGODB_URI=mongodb://127.0.0.1:27017/exam_system
+JWT_SECRET=supersecretjwtkey-change-this-in-production
+USERS_FILE_PATH=./users.json
+MOODLE_URL=http://localhost/moodle
+MOODLE_TOKEN=your_moodle_api_token_here
+EXAM_TIME_LIMIT=3600
+MAX_QUESTIONS_PER_EXAM=50
+PASSING_SCORE=60
+```
 
 ---
 
@@ -167,5 +197,4 @@ npm install
 
 # Start Vite dev server (starts frontend on http://localhost:5173)
 npm run dev
-```
-"# api-lab" 
+``` 

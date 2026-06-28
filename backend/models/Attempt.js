@@ -7,7 +7,7 @@ const AttemptSchema = new mongoose.Schema({
     unique: true
   },
   student_id: {
-    type: Number,
+    type: String,
     required: true
   },
   exam_id: {

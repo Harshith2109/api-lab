@@ -38,7 +38,14 @@ const seedUsers = async () => {
         await newUser.save();
         console.log(`  + Created user: ${userData.username} (${userData.role})`);
       } else {
-        console.log(`  = User already exists: ${userData.username}`);
+        // Synchronize existing user fields and password with users.json
+        userExists.password = userData.password;
+        userExists.fullname = userData.fullname;
+        userExists.email = userData.email;
+        userExists.userId = userData.userId;
+        userExists.role = userData.role;
+        await userExists.save();
+        console.log(`  ✓ Synced user credentials from users.json: ${userData.username}`);
       }
     }
     console.log('✓ Seeding process complete.');

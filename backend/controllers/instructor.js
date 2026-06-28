@@ -1,8 +1,6 @@
 const Exam = require('../models/Exam');
 const User = require('../models/User');
-const MoodleAPIClient = require('../moodle_api/client');
-
-const moodleClient = new MoodleAPIClient(process.env.MOODLE_URL, process.env.MOODLE_TOKEN);
+const Attempt = require('../models/Attempt');
 
 exports.initInstructor = async (req, res) => {
   try {
@@ -11,16 +9,14 @@ exports.initInstructor = async (req, res) => {
       return res.status(400).json({ error: 'instructor_id required' });
     }
 
-    // Try loading info from Moodle client
-    const profile = await moodleClient.getUserProfile(instructor_id);
-    const moodleUser = profile[0] || {};
+    const user = await User.findOne({ $or: [{ userId: String(instructor_id) }, { username: String(instructor_id) }] });
 
     return res.status(200).json({
       message: 'Instructor initialized',
       instructor: {
-        instructor_id: parseInt(instructor_id),
-        name: moodleUser.fullname || 'Instructor',
-        email: moodleUser.email || 'unknown'
+        instructor_id: String(instructor_id),
+        name: user ? user.fullname : 'Instructor',
+        email: user ? user.email : 'unknown'
       }
     });
   } catch (err) {
@@ -30,16 +26,50 @@ exports.initInstructor = async (req, res) => {
 
 exports.createExam = async (req, res) => {
   try {
-    const instructor_id = parseInt(req.params.instructor_id);
-    const { course_id, exam_name, description, duration, total_marks, passing_marks } = req.body;
+    const instructor_id = String(req.params.instructor_id);
+    const { course_id, exam_name, description, duration, total_marks, passing_marks, questions } = req.body;
 
     if (!course_id || !exam_name) {
       return res.status(400).json({ error: 'course_id and exam_name required' });
     }
 
+    const intendedTotal = total_marks ? parseInt(total_marks) : 100;
+
+    // Strict validation if questions are supplied
+    if (questions && Array.isArray(questions) && questions.length > 0) {
+      const combinedMarks = questions.reduce((sum, q) => sum + (parseInt(q.marks) || 0), 0);
+      if (combinedMarks !== intendedTotal) {
+        return res.status(400).json({
+          error: `Total question marks (${combinedMarks}) must equal intended exam total marks (${intendedTotal}).`
+        });
+      }
+    }
+
     // Find the next available numeric exam_id
     const maxExam = await Exam.findOne({}).sort({ exam_id: -1 });
     const nextExamId = maxExam ? maxExam.exam_id + 1 : 1;
+
+    let formattedQuestions = [];
+    if (questions && Array.isArray(questions)) {
+      formattedQuestions = questions.map((q, qIdx) => {
+        let optionsMap = {};
+        if (q.options) {
+          if (Array.isArray(q.options)) {
+            q.options.forEach((opt, idx) => { optionsMap[idx] = opt; });
+          } else {
+            optionsMap = q.options;
+          }
+        }
+        return {
+          question_id: qIdx + 1,
+          question_text: q.question_text || `Question ${qIdx + 1}`,
+          question_type: q.question_type || 'multiple_choice',
+          marks: q.marks ? parseInt(q.marks) : 10,
+          options: optionsMap,
+          correct_answer: q.correct_answer || '0'
+        };
+      });
+    }
 
     const newExam = new Exam({
       exam_id: nextExamId,
@@ -48,9 +78,9 @@ exports.createExam = async (req, res) => {
       description: description || `Exam: ${exam_name}`,
       instructor_id,
       duration: duration ? parseInt(duration) : 3600,
-      total_marks: total_marks ? parseInt(total_marks) : 100,
+      total_marks: intendedTotal,
       passing_marks: passing_marks ? parseInt(passing_marks) : 40,
-      questions: [],
+      questions: formattedQuestions,
       eligible_students: []
     });
 
@@ -96,34 +126,21 @@ exports.addQuestion = async (req, res) => {
       return res.status(400).json({ error: `Invalid question type: ${question_type}` });
     }
 
-    if (question_type === 'multiple_choice') {
-      if (!options || options.length < 2) {
-        return res.status(400).json({ error: 'Multiple choice questions need at least 2 options' });
-      }
-      if (correct_answer === undefined || correct_answer === null || parseInt(correct_answer) >= options.length) {
-        return res.status(400).json({ error: `Invalid correct answer index: ${correct_answer}` });
-      }
-    }
-
-    const nextQuestionId = exam.questions.length + 1;
-
-    // Convert options array/object to Map
     let optionsMap = {};
     if (options) {
       if (Array.isArray(options)) {
-        options.forEach((opt, idx) => {
-          optionsMap[idx] = opt;
-        });
+        options.forEach((opt, idx) => { optionsMap[idx] = opt; });
       } else {
         optionsMap = options;
       }
     }
 
+    const nextQuestionId = exam.questions.length + 1;
     const question = {
       question_id: nextQuestionId,
       question_text,
       question_type,
-      marks: marks ? parseInt(marks) : 1,
+      marks: marks ? parseInt(marks) : 10,
       options: optionsMap,
       correct_answer
     };
@@ -187,25 +204,13 @@ exports.addEligibleStudents = async (req, res) => {
       return res.status(404).json({ error: 'Exam not found' });
     }
 
-    let enrolledIds = new Set();
-    try {
-      const enrolledUsers = await moodleClient.getEnrolledUsers(exam.course_id);
-      if (enrolledUsers && enrolledUsers.length > 0) {
-        enrolledUsers.forEach(u => enrolledIds.add(u.id));
-      }
-    } catch (e) {
-      console.warn(`Enrollment verification skipped: ${e.message}`);
-    }
-
     const validStudents = [];
     student_ids.forEach(id => {
-      const parsedId = parseInt(id);
-      if (enrolledIds.size === 0 || enrolledIds.has(parsedId)) {
-        if (!exam.eligible_students.includes(parsedId)) {
-          exam.eligible_students.push(parsedId);
-        }
-        validStudents.push(parsedId);
+      const strId = String(id);
+      if (!exam.eligible_students.includes(strId)) {
+        exam.eligible_students.push(strId);
       }
+      validStudents.push(strId);
     });
 
     await exam.save();
@@ -261,7 +266,7 @@ exports.deactivateExam = async (req, res) => {
 
 exports.getExams = async (req, res) => {
   try {
-    const instructor_id = parseInt(req.params.instructor_id);
+    const instructor_id = String(req.params.instructor_id);
     const exams = await Exam.find({ instructor_id });
     return res.status(200).json({
       message: 'Exams retrieved',
@@ -299,13 +304,12 @@ exports.updateExam = async (req, res) => {
   }
 };
 
-const Attempt = require('../models/Attempt');
 exports.getExamAttempts = async (req, res) => {
   try {
     const exam_id = parseInt(req.params.exam_id);
+    const exam = await Exam.findOne({ exam_id }).lean();
     const attempts = await Attempt.find({ exam_id }).lean();
-    
-    // Fetch user details for each attempt
+
     const enrichedAttempts = await Promise.all(
       attempts.map(async (att) => {
         const student = await User.findOne({ userId: att.student_id }).select('fullname email').lean();
@@ -319,7 +323,73 @@ exports.getExamAttempts = async (req, res) => {
 
     return res.status(200).json({
       message: 'Attempts retrieved',
+      questions: exam ? exam.questions : [],
       attempts: enrichedAttempts
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.gradeAttempt = async (req, res) => {
+  try {
+    const attempt_id = parseInt(req.params.attempt_id);
+    const exam_id = parseInt(req.params.exam_id);
+    const { question_scores } = req.body || {};
+
+    const attempt = await Attempt.findOne({ attempt_id, exam_id });
+    if (!attempt) {
+      return res.status(404).json({ error: 'Attempt not found' });
+    }
+
+    const exam = await Exam.findOne({ exam_id });
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    let obtainedMarks = 0;
+    const totalMarks = Number(exam.total_marks) || 100;
+
+    exam.questions.forEach((q) => {
+      const qIdStr = String(q.question_id);
+      if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
+        const studentAns = attempt.answers ? attempt.answers.get(qIdStr) : undefined;
+        let autoMark = 0;
+        if (studentAns !== undefined && studentAns !== null) {
+          if (q.question_type === 'multiple_choice' && String(studentAns) === String(q.correct_answer)) {
+            autoMark = Number(q.marks);
+          } else if (q.question_type === 'true_false' && String(studentAns).toLowerCase() === String(q.correct_answer).toLowerCase()) {
+            autoMark = Number(q.marks);
+          }
+        }
+
+        if (question_scores && question_scores[qIdStr] !== undefined && question_scores[qIdStr] !== null && String(question_scores[qIdStr]) !== '') {
+          const assignedScore = Number(question_scores[qIdStr]);
+          attempt.question_scores.set(qIdStr, assignedScore);
+          obtainedMarks += assignedScore;
+        } else {
+          attempt.question_scores.set(qIdStr, autoMark);
+          obtainedMarks += autoMark;
+        }
+      } else {
+        const assignedScore = (question_scores && question_scores[qIdStr] !== undefined) ? Number(question_scores[qIdStr]) : 0;
+        attempt.question_scores.set(qIdStr, assignedScore);
+        obtainedMarks += assignedScore;
+      }
+    });
+
+    const finalPercentage = totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100) : 0;
+    attempt.score = finalPercentage;
+    attempt.status = 'graded';
+    await attempt.save();
+
+    return res.status(200).json({
+      message: 'Evaluation finalized and results published successfully',
+      attempt: {
+        attempt_id: attempt.attempt_id,
+        score: attempt.score,
+        status: attempt.status
+      }
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
