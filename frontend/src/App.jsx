@@ -105,6 +105,13 @@ export default function App() {
     }
   }, [view, token, currentUser]);
 
+  // Auto-reload users whenever instructor views eligibility tab
+  useEffect(() => {
+    if (view === 'instructor' && instructorTab === 'eligibility' && token) {
+      loadUsers();
+    }
+  }, [view, instructorTab, token]);
+
   // Live Exam Timer Hook
   useEffect(() => {
     if (view !== 'exam-runner' || !activeExam || !activeAttemptId) return;
@@ -467,9 +474,9 @@ export default function App() {
             <span style={{ fontSize: '0.85rem', padding: '4px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary-light)', border: '1px solid rgba(99, 102, 241, 0.3)', fontWeight: 600 }}>
               ID: {currentUser.userId}
             </span>
-            <button 
-              className="btn btn-secondary" 
-              onClick={toggleTheme} 
+            <button
+              className="btn btn-secondary"
+              onClick={toggleTheme}
               style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
               title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
             >
@@ -488,9 +495,9 @@ export default function App() {
       {view === 'login' && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '420px', position: 'relative' }}>
-            <button 
-              className="btn btn-secondary" 
-              onClick={toggleTheme} 
+            <button
+              className="btn btn-secondary"
+              onClick={toggleTheme}
               style={{ position: 'absolute', top: '16px', right: '16px', padding: '6px 10px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
               title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
             >
@@ -590,21 +597,21 @@ export default function App() {
           </h2>
 
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-            <button 
+            <button
               type="button"
               className={`btn ${adminTab === 'create' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setAdminTab('create')}
             >
               <span>➕ Add New User</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${adminTab === 'users' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setAdminTab('users')}
             >
               <span>👥 User Directory ({usersList.length})</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${adminTab === 'exams' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setAdminTab('exams')}
@@ -635,8 +642,8 @@ export default function App() {
                     paddingRight: '12px',
                     width: '100%'
                   }}>
-                    <input 
-                      type={showRegPassword ? 'text' : 'password'} 
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
                       style={{
                         flex: 1,
                         background: 'transparent',
@@ -648,9 +655,9 @@ export default function App() {
                         fontFamily: 'inherit',
                         width: '100%'
                       }}
-                      value={regUser.password} 
-                      onChange={e => setRegUser({ ...regUser, password: e.target.value })} 
-                      required 
+                      value={regUser.password}
+                      onChange={e => setRegUser({ ...regUser, password: e.target.value })}
+                      required
                     />
                     <button
                       type="button"
@@ -725,8 +732,8 @@ export default function App() {
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right' }}>
                           {u.userId !== currentUser.userId && (
-                            <button 
-                              className="btn btn-danger" 
+                            <button
+                              className="btn btn-danger"
                               style={{ padding: '4px 10px', fontSize: '0.8rem' }}
                               onClick={() => handleDeleteUser(u)}
                             >
@@ -766,8 +773,8 @@ export default function App() {
                         )}
 
                         {ex.is_active && (
-                          <button 
-                            className="btn btn-warning" 
+                          <button
+                            className="btn btn-warning"
                             style={{ padding: '6px 12px', fontSize: '0.85rem', backgroundColor: 'rgba(234, 179, 8, 0.15)', color: 'var(--warning)', border: '1px solid var(--warning)' }}
                             onClick={() => handleAdminStopExam(ex.exam_id)}
                           >
@@ -775,8 +782,8 @@ export default function App() {
                           </button>
                         )}
 
-                        <button 
-                          className="btn btn-danger" 
+                        <button
+                          className="btn btn-danger"
                           style={{ padding: '6px 12px', fontSize: '0.85rem' }}
                           onClick={() => handleAdminDeleteExam(ex.exam_id)}
                         >
@@ -800,21 +807,21 @@ export default function App() {
 
           {/* Instructor Navigation Tabs */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-            <button 
+            <button
               type="button"
               className={`btn ${instructorTab === 'build' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setInstructorTab('build')}
             >
               <span>🛠️ Build Exam & Questions</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${instructorTab === 'manage' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setInstructorTab('manage')}
             >
               <span>📋 Manage Exams & Evaluations ({exams.length})</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${instructorTab === 'eligibility' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setInstructorTab('eligibility')}
@@ -884,20 +891,20 @@ export default function App() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', alignItems: 'end' }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">Mention Number of Questions</label>
-                        <input 
-                          type="number" 
-                          className="input-control" 
-                          min="1" 
+                        <input
+                          type="number"
+                          className="input-control"
+                          min="1"
                           max="50"
-                          value={targetQuestionCount} 
-                          onChange={e => setTargetQuestionCount(Math.max(1, parseInt(e.target.value) || 1))} 
+                          value={targetQuestionCount}
+                          onChange={e => setTargetQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
                         />
                       </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">Default Type of Questions</label>
-                        <select 
-                          className="input-control" 
-                          value={defaultQuestionType} 
+                        <select
+                          className="input-control"
+                          value={defaultQuestionType}
                           onChange={e => setDefaultQuestionType(e.target.value)}
                         >
                           <option value="multiple_choice">Multiple Choice</option>
@@ -906,9 +913,9 @@ export default function App() {
                           <option value="essay">Essay</option>
                         </select>
                       </div>
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary" 
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
                         style={{ height: '42px' }}
                         onClick={() => {
                           const count = Math.max(1, targetQuestionCount);
@@ -931,9 +938,9 @@ export default function App() {
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h4 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Editable Question Items ({examQuestionsList.length})</h4>
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary" 
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
                       style={{ padding: '6px 12px', fontSize: '0.85rem' }}
                       onClick={() => setExamQuestionsList([...examQuestionsList, { question_text: '', question_type: defaultQuestionType, marks: 10, options: ['', '', '', ''], correct_answer: '0' }])}
                     >
@@ -951,9 +958,9 @@ export default function App() {
                         <div key={qIdx} style={{ background: 'var(--bg-subbox)', border: '1px solid var(--border-color)', padding: '16px', borderRadius: 'var(--radius-md)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                             <span style={{ fontWeight: 700, color: 'var(--primary)' }}>Question #{qIdx + 1}</span>
-                            <button 
-                              type="button" 
-                              className="btn btn-danger" 
+                            <button
+                              type="button"
+                              className="btn btn-danger"
                               style={{ padding: '4px 8px', fontSize: '0.75rem' }}
                               onClick={() => setExamQuestionsList(examQuestionsList.filter((_, idx) => idx !== qIdx))}
                             >
@@ -964,24 +971,24 @@ export default function App() {
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '15px', marginBottom: '12px' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                               <label className="form-label">Question Text</label>
-                              <input 
-                                type="text" 
-                                className="input-control" 
+                              <input
+                                type="text"
+                                className="input-control"
                                 placeholder="Enter question prompt..."
-                                value={q.question_text} 
+                                value={q.question_text}
                                 onChange={e => {
                                   const updated = [...examQuestionsList];
                                   updated[qIdx].question_text = e.target.value;
                                   setExamQuestionsList(updated);
-                                }} 
-                                required 
+                                }}
+                                required
                               />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                               <label className="form-label">Question Type</label>
-                              <select 
-                                className="input-control" 
-                                value={q.question_type} 
+                              <select
+                                className="input-control"
+                                value={q.question_type}
                                 onChange={e => {
                                   const updated = [...examQuestionsList];
                                   updated[qIdx].question_type = e.target.value;
@@ -996,16 +1003,16 @@ export default function App() {
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                               <label className="form-label">Marks</label>
-                              <input 
-                                type="number" 
-                                className="input-control" 
-                                value={q.marks} 
+                              <input
+                                type="number"
+                                className="input-control"
+                                value={q.marks}
                                 onChange={e => {
                                   const updated = [...examQuestionsList];
                                   updated[qIdx].marks = e.target.value;
                                   setExamQuestionsList(updated);
-                                }} 
-                                required 
+                                }}
+                                required
                               />
                             </div>
                           </div>
@@ -1015,13 +1022,13 @@ export default function App() {
                               <label className="form-label" style={{ fontSize: '0.8rem' }}>Options (4 choices)</label>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                                 {q.options.map((opt, oIdx) => (
-                                  <input 
-                                    key={oIdx} 
-                                    type="text" 
-                                    placeholder={`Option ${oIdx + 1}`} 
-                                    className="input-control" 
+                                  <input
+                                    key={oIdx}
+                                    type="text"
+                                    placeholder={`Option ${oIdx + 1}`}
+                                    className="input-control"
                                     style={{ padding: '6px 10px', fontSize: '0.85rem' }}
-                                    value={opt} 
+                                    value={opt}
                                     onChange={e => {
                                       const updated = [...examQuestionsList];
                                       updated[qIdx].options[oIdx] = e.target.value;
@@ -1036,17 +1043,17 @@ export default function App() {
                           {(q.question_type === 'multiple_choice' || q.question_type === 'true_false') && (
                             <div className="form-group" style={{ marginBottom: 0 }}>
                               <label className="form-label" style={{ fontSize: '0.8rem' }}>Correct Answer / Index</label>
-                              <input 
-                                type="text" 
-                                className="input-control" 
+                              <input
+                                type="text"
+                                className="input-control"
                                 style={{ padding: '6px 10px', fontSize: '0.85rem' }}
-                                placeholder={q.question_type === 'true_false' ? 'true / false' : '0, 1, 2, or 3'} 
-                                value={q.correct_answer} 
+                                placeholder={q.question_type === 'true_false' ? 'true / false' : '0, 1, 2, or 3'}
+                                value={q.correct_answer}
                                 onChange={e => {
                                   const updated = [...examQuestionsList];
                                   updated[qIdx].correct_answer = e.target.value;
                                   setExamQuestionsList(updated);
-                                }} 
+                                }}
                               />
                             </div>
                           )}
@@ -1233,21 +1240,21 @@ export default function App() {
           <h2 style={{ marginBottom: '24px' }}>Student Exam Dashboard</h2>
           {/* Student Navigation Tabs */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-            <button 
+            <button
               type="button"
               className={`btn ${studentTab === 'ongoing' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setStudentTab('ongoing')}
             >
               <span>🔍 Live Ongoing Exams ({ongoingExams.length})</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${studentTab === 'take' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setStudentTab('take')}
             >
               <span>📝 Search & Take Exam</span>
             </button>
-            <button 
+            <button
               type="button"
               className={`btn ${studentTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setStudentTab('history')}
@@ -1348,7 +1355,7 @@ export default function App() {
                     <div>
                       <h4 style={{ fontWeight: 600 }}>Exam ID: {att.exam_id}</h4>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                        Attempt ID: {att.attempt_id} • Status: 
+                        Attempt ID: {att.attempt_id} • Status:
                         <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
                           {att.status === 'submitted' ? 'Pending Instructor Evaluation' : att.status}
                         </span>

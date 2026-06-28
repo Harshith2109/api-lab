@@ -32,7 +32,7 @@ app.post('/api/auth/login', authController.login);
 app.post('/api/auth/register', authController.register);
 
 // ==================== ADMIN ROUTES ====================
-app.get('/api/admin/users', protect, authorize('admin'), adminController.getUsers);
+app.get('/api/admin/users', protect, authorize('admin', 'instructor'), adminController.getUsers);
 app.post('/api/admin/users', protect, authorize('admin'), adminController.createUser);
 app.delete('/api/admin/users/:user_id', protect, authorize('admin'), adminController.deleteUser);
 app.get('/api/admin/exams', protect, authorize('admin'), adminController.getAllExams);

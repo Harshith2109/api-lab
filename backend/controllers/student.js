@@ -60,7 +60,7 @@ exports.startExam = async (req, res) => {
       return res.status(400).json({ error: 'instructor_id required' });
     }
 
-    const exam = await Exam.findOne({ exam_id, instructor_id: String(instructor_id) });
+    const exam = await Exam.findOne({ exam_id });
     if (!exam) {
       return res.status(404).json({ error: 'Exam not found' });
     }
@@ -182,11 +182,11 @@ exports.submitExam = async (req, res) => {
     const exam_id = parseInt(req.params.exam_id);
     const { attempt_id, instructor_id } = req.body;
 
-    if (attempt_id === undefined || !instructor_id) {
-      return res.status(400).json({ error: 'attempt_id and instructor_id required' });
+    if (attempt_id === undefined) {
+      return res.status(400).json({ error: 'attempt_id required' });
     }
 
-    const exam = await Exam.findOne({ exam_id, instructor_id: String(instructor_id) });
+    const exam = await Exam.findOne({ exam_id });
     if (!exam) {
       return res.status(404).json({ error: 'Exam not found' });
     }
