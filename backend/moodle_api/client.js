@@ -18,7 +18,6 @@ class MoodleAPIClient {
     try {
       let response;
       if (method.toUpperCase() === 'POST') {
-        // Convert to application/x-www-form-urlencoded format for Moodle
         const formParams = new URLSearchParams();
         for (const [key, val] of Object.entries(fullParams)) {
           if (Array.isArray(val)) {
