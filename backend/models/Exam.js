@@ -65,6 +65,9 @@ const ExamSchema = new mongoose.Schema({
   eligible_students: [{
     type: String
   }],
+  reattempt_students: [{
+    type: String
+  }],
   is_active: {
     type: Boolean,
     default: false

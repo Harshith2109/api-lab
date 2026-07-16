@@ -76,6 +76,14 @@ exports.startExam = async (req, res) => {
     // Check if there is an in-progress attempt
     let attempt = await Attempt.findOne({ student_id, exam_id, status: 'in_progress' });
     if (!attempt) {
+      // Check if student has already completed or submitted an attempt
+      const existingCompleted = await Attempt.findOne({ student_id, exam_id, status: { $in: ['submitted', 'graded'] } });
+      const isReattemptAllowed = exam.reattempt_students && exam.reattempt_students.includes(student_id);
+
+      if (existingCompleted && !isReattemptAllowed) {
+        return res.status(403).json({ error: 'You have already attempted this exam. Contact your instructor or admin for a reattempt.' });
+      }
+
       const maxAttempt = await Attempt.findOne({}).sort({ attempt_id: -1 });
       const nextAttemptId = maxAttempt ? maxAttempt.attempt_id + 1 : 1;
 
@@ -88,6 +96,12 @@ exports.startExam = async (req, res) => {
         status: 'in_progress'
       });
       await attempt.save();
+
+      // If reattempt was granted, consume it once started
+      if (isReattemptAllowed) {
+        exam.reattempt_students = exam.reattempt_students.filter(id => id !== student_id);
+        await exam.save();
+      }
     }
 
     // Return questions without correct answers
@@ -101,6 +115,8 @@ exports.startExam = async (req, res) => {
       message: 'Exam started',
       attempt_id: attempt.attempt_id,
       exam_id,
+      instructor_id: exam.instructor_id,
+      exam_name: exam.exam_name,
       duration: exam.duration,
       total_questions: safeQuestions.length,
       total_marks: exam.total_marks,

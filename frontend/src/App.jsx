@@ -50,6 +50,9 @@ export default function App() {
   const [editingExam, setEditingExam] = useState(null);
   const [viewingAttemptsExam, setViewingAttemptsExam] = useState(null);
   const [examAttempts, setExamAttempts] = useState([]);
+  const [evaluatingAttempt, setEvaluatingAttempt] = useState(null);
+  const [examQuestions, setExamQuestions] = useState([]);
+  const [questionScores, setQuestionScores] = useState({});
 
   // Student Dashboard State
   const [availableExams, setAvailableExams] = useState([]);
@@ -255,6 +258,7 @@ export default function App() {
       // Get exams
       const res = await axios.get(`${API_BASE}/instructor/${currentUser.userId}/exams`, getHeaders());
       setExams(res.data.exams || []);
+      loadUsers();
     } catch (err) {
       console.error('Error loading instructor exams:', err);
     }
@@ -361,9 +365,53 @@ export default function App() {
         getHeaders()
       );
       setExamAttempts(res.data.attempts || []);
+      setExamQuestions(res.data.questions || exam.questions || []);
       setViewingAttemptsExam(exam);
+      setEvaluatingAttempt(null);
     } catch (err) {
       alert('Error loading attempts: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleStartEvaluation = (att) => {
+    setEvaluatingAttempt(att);
+    const initialScores = {};
+    if (att.question_scores) {
+      const scoresObj = att.question_scores instanceof Map ? Object.fromEntries(att.question_scores) : att.question_scores;
+      Object.keys(scoresObj).forEach(qId => {
+        initialScores[qId] = scoresObj[qId];
+      });
+    }
+    setQuestionScores(initialScores);
+  };
+
+  const handleSubmitEvaluation = async (e) => {
+    e.preventDefault();
+    if (!evaluatingAttempt || !viewingAttemptsExam) return;
+    try {
+      const res = await axios.post(
+        `${API_BASE}/instructor/${currentUser.userId}/exams/${viewingAttemptsExam.exam_id}/attempts/${evaluatingAttempt.attempt_id}/grade`,
+        { question_scores: questionScores },
+        getHeaders()
+      );
+      alert(`✓ ${res.data.message || 'Evaluation finalized successfully!'}`);
+      setEvaluatingAttempt(null);
+      handleFetchAttempts(viewingAttemptsExam);
+    } catch (err) {
+      alert('Error finalizing evaluation: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleGrantReattempt = async (studentId, examId) => {
+    try {
+      const res = await axios.post(
+        `${API_BASE}/instructor/${currentUser.userId}/exams/${examId}/reattempt`,
+        { student_id: String(studentId) },
+        getHeaders()
+      );
+      alert(`✓ ${res.data.message}`);
+    } catch (err) {
+      alert('Error granting reattempt: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -407,7 +455,11 @@ export default function App() {
         instructor_id: String(instructorId)
       }, getHeaders());
 
-      setActiveExam(res.data);
+      setActiveExam({
+        ...res.data,
+        instructor_id: String(instructorId || res.data.instructor_id),
+        exam_name: res.data.exam_name || exam.exam_name
+      });
       setActiveAttemptId(res.data.attempt_id);
       setTimeRemaining(res.data.duration);
       setStudentAnswers({});
@@ -439,6 +491,10 @@ export default function App() {
     try {
       // Find the instructor ID for this exam
       const instructorId = activeExam.instructor_id || localStorage.getItem('active_instructor_id');
+      if (!instructorId || instructorId === 'null' || instructorId === 'undefined') {
+        alert('Error: Instructor ID missing for this exam session.');
+        return;
+      }
       const res = await axios.post(`${API_BASE}/student/${currentUser.userId}/exams/${activeExam.exam_id}/submit`, {
         attempt_id: activeAttemptId,
         instructor_id: String(instructorId)
@@ -1213,20 +1269,92 @@ export default function App() {
                   </div>
                   <div style={{ display: 'grid', gap: '12px' }}>
                     {examAttempts.map(att => (
-                      <div key={att.attempt_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'var(--bg-subbox)' }}>
+                      <div key={att.attempt_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '16px', background: 'var(--bg-subbox)' }}>
                         <div>
-                          <p style={{ fontWeight: 600 }}>{att.student_name} <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>({att.student_email})</span></p>
-                          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Attempt ID: {att.attempt_id} • Status: {att.status}</p>
+                          <p style={{ fontWeight: 600, fontSize: '1.05rem' }}>{att.student_name} <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>({att.student_email})</span></p>
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
+                            Attempt ID: {att.attempt_id} • Status:
+                            <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
+                              {att.status}
+                            </span>
+                          </p>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '1.2rem', fontWeight: 800, color: att.score >= viewingAttemptsExam.passing_marks ? 'var(--success)' : 'var(--error)' }}>
-                            {att.score}%
-                          </span>
+                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div>
+                            <span style={{ fontSize: '1.3rem', fontWeight: 800, color: att.score >= viewingAttemptsExam.passing_marks ? 'var(--success)' : 'var(--error)' }}>
+                              {att.score}%
+                            </span>
+                          </div>
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                            onClick={() => handleStartEvaluation(att)}
+                          >
+                            📝 Evaluate / Grade
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                            onClick={() => handleGrantReattempt(att.student_id, viewingAttemptsExam.exam_id)}
+                          >
+                            🔄 Allow Reattempt
+                          </button>
                         </div>
                       </div>
                     ))}
                     {examAttempts.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No attempts found for this exam.</p>}
                   </div>
+
+                  {/* Interactive Evaluation Modal / Form */}
+                  {evaluatingAttempt && (
+                    <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '2px solid var(--primary-light)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h4 style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                          Evaluating Student: {evaluatingAttempt.student_name} (Attempt #{evaluatingAttempt.attempt_id})
+                        </h4>
+                        <button type="button" className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => setEvaluatingAttempt(null)}>Cancel Evaluation</button>
+                      </div>
+
+                      <form onSubmit={handleSubmitEvaluation}>
+                        <div style={{ display: 'grid', gap: '16px', marginBottom: '20px' }}>
+                          {examQuestions.map((q, idx) => {
+                            const qIdStr = String(q.question_id);
+                            const studentAns = evaluatingAttempt.answers ? (evaluatingAttempt.answers[qIdStr] || (evaluatingAttempt.answers instanceof Map && evaluatingAttempt.answers.get(qIdStr)) || 'No answer submitted') : 'No answer submitted';
+                            return (
+                              <div key={q.question_id} style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '16px', background: 'var(--bg-card)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                  <span style={{ fontWeight: 700 }}>Q{idx + 1}: {q.question_text} ({q.marks} Marks)</span>
+                                  <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '4px', background: 'rgba(99,102,241,0.1)', color: 'var(--primary)', fontWeight: 600 }}>{q.question_type}</span>
+                                </div>
+                                <div style={{ marginBottom: '12px', padding: '10px', background: 'var(--bg-subbox)', borderRadius: 'var(--radius-sm)', fontSize: '0.95rem' }}>
+                                  <strong>Student Answer:</strong> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{String(studentAns)}</span>
+                                  {q.correct_answer && <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Correct Reference Answer: {String(q.correct_answer)}</div>}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Score Awarded:</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={q.marks}
+                                    className="input-control"
+                                    style={{ width: '120px', padding: '6px 10px' }}
+                                    value={questionScores[qIdStr] !== undefined ? questionScores[qIdStr] : ''}
+                                    onChange={e => setQuestionScores({ ...questionScores, [qIdStr]: e.target.value })}
+                                    placeholder={`Max ${q.marks}`}
+                                    required
+                                  />
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/ {q.marks} marks</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px', fontSize: '1rem', fontWeight: 700 }}>
+                          Save & Finalize Evaluation
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

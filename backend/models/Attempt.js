@@ -30,6 +30,11 @@ const AttemptSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  question_scores: {
+    type: Map,
+    of: Number,
+    default: {}
+  },
   status: {
     type: String,
     enum: ['in_progress', 'submitted', 'graded'],

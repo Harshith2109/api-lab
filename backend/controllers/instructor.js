@@ -347,6 +347,10 @@ exports.gradeAttempt = async (req, res) => {
       return res.status(404).json({ error: 'Exam not found' });
     }
 
+    if (!attempt.question_scores) {
+      attempt.question_scores = new Map();
+    }
+
     let obtainedMarks = 0;
     const totalMarks = Number(exam.total_marks) || 100;
 
@@ -390,6 +394,41 @@ exports.gradeAttempt = async (req, res) => {
         score: attempt.score,
         status: attempt.status
       }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.allowReattempt = async (req, res) => {
+  try {
+    const exam_id = parseInt(req.params.exam_id);
+    const { student_id } = req.body;
+
+    if (!student_id) {
+      return res.status(400).json({ error: 'student_id required' });
+    }
+
+    const exam = await Exam.findOne({ exam_id });
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    const strId = String(student_id);
+    if (!exam.reattempt_students) {
+      exam.reattempt_students = [];
+    }
+
+    if (!exam.reattempt_students.includes(strId)) {
+      exam.reattempt_students.push(strId);
+    }
+
+    await exam.save();
+
+    return res.status(200).json({
+      message: `Reattempt granted successfully for student ${student_id}`,
+      exam_id,
+      student_id: strId
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
