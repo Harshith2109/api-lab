@@ -53,6 +53,9 @@ export default function App() {
   const [evaluatingAttempt, setEvaluatingAttempt] = useState(null);
   const [examQuestions, setExamQuestions] = useState([]);
   const [questionScores, setQuestionScores] = useState({});
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraWarnings, setCameraWarnings] = useState(0);
+  const [cameraActive, setCameraActive] = useState(false);
 
   // Student Dashboard State
   const [availableExams, setAvailableExams] = useState([]);
@@ -140,6 +143,165 @@ export default function App() {
 
     return () => clearInterval(timer);
   }, [view, activeExam, activeAttemptId]);
+
+  // Proctoring Monitor Hook (Webcam, Tab focus, Fullscreen enforcement)
+  useEffect(() => {
+    if (view !== 'exam-runner' || !activeExam || !activeAttemptId) return;
+
+    let localStream = null;
+    let checkTimeout = null;
+    let graceTimeout = null;
+    let isActiveSession = true;
+
+    const requestFullScreen = () => {
+      const docEl = document.documentElement;
+      if (docEl.requestFullscreen) {
+        docEl.requestFullscreen().catch(err => {
+          console.warn("Fullscreen request denied: ", err.message);
+        });
+      }
+    };
+
+    // Prompt fullscreen on start
+    requestFullScreen();
+
+    // 1. Initialize Webcam
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (!isActiveSession) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        localStream = stream;
+        setCameraStream(stream);
+        setCameraActive(true);
+        setCameraWarnings(0);
+
+        // Listen for track ending/muting
+        stream.getVideoTracks().forEach(track => {
+          track.addEventListener('ended', () => {
+            logViolation("Webcam track ended / disconnected");
+            setCameraActive(false);
+          });
+          track.addEventListener('mute', () => {
+            logViolation("Webcam feed muted / disabled");
+            setCameraActive(false);
+          });
+          track.addEventListener('unmute', () => {
+            setCameraActive(true);
+          });
+        });
+      } catch (err) {
+        console.error("Camera permission error:", err);
+        setCameraActive(false);
+        logViolation("Webcam permission denied / blocked");
+        // Issue immediate warning
+        setCameraWarnings(prev => {
+          const next = prev + 1;
+          alert(`🚨 PROCTORING WARNING: Camera permission is required! (Warning ${next} of 3). You will be disqualified if not resolved.`);
+          return next;
+        });
+      }
+    };
+
+    startCamera();
+
+    const logViolation = async (reason) => {
+      try {
+        await axios.post(
+          `${API_BASE}/student/${currentUser.userId}/exams/${activeExam.exam_id}/violation`,
+          { reason },
+          getHeaders()
+        );
+      } catch (err) {
+        console.error("Error logging proctoring violation:", err);
+      }
+    };
+
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        const reason = "Tab switched / Window minimized";
+        await logViolation(reason);
+        setCameraWarnings(prev => {
+          const next = prev + 1;
+          alert(`🚨 PROCTORING WARNING: Tab switching is strictly prohibited! (Warning ${next} of 3). You will be disqualified if not resolved.`);
+          return next;
+        });
+      }
+    };
+
+    const handleFullScreenChange = async () => {
+      if (!document.fullscreenElement) {
+        const reason = "Exited full screen mode";
+        await logViolation(reason);
+        setCameraWarnings(prev => {
+          const next = prev + 1;
+          alert(`🚨 PROCTORING WARNING: Leaving full screen is not permitted! (Warning ${next} of 3). Please return to full screen.`);
+          requestFullScreen();
+          return next;
+        });
+      }
+    };
+
+    // Recursive timeout validation to prevent alert storms and race conditions
+    const checkCameraStatus = () => {
+      if (!isActiveSession) return;
+
+      let isLive = false;
+      if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack && videoTrack.readyState === 'live' && videoTrack.enabled) {
+          isLive = true;
+        }
+      }
+
+      if (!isLive) {
+        setCameraActive(false);
+        logViolation("Webcam feed inactive / disabled / blocked");
+        setCameraWarnings(prev => {
+          const next = prev + 1;
+          if (next < 3) {
+            alert(`🚨 PROCTORING WARNING: Camera is inactive! Please check connection. (Warning ${next} of 3). You will be disqualified if not resolved.`);
+            checkTimeout = setTimeout(checkCameraStatus, 5000);
+          }
+          return next;
+        });
+      } else {
+        setCameraActive(true);
+        checkTimeout = setTimeout(checkCameraStatus, 5000);
+      }
+    };
+
+    // Give 15-second grace period for the initial permission prompt to resolve
+    graceTimeout = setTimeout(() => {
+      checkCameraStatus();
+    }, 15000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+
+    return () => {
+      isActiveSession = false;
+      clearTimeout(graceTimeout);
+      clearTimeout(checkTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullScreenChange);
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.log(err));
+      }
+    };
+  }, [view, activeExam, activeAttemptId]);
+
+  // Handle Camera warnings and disqualification
+  useEffect(() => {
+    if (view === 'exam-runner' && cameraWarnings >= 3) {
+      handleExamSubmit(true);
+    }
+  }, [cameraWarnings, view]);
 
   // --- API OPERATIONS ---
 
@@ -450,14 +612,26 @@ export default function App() {
   };
 
   const handleStartExam = async (exam, instructorId) => {
+    // Request fullscreen immediately inside the user click gesture stack
+    const docEl = document.documentElement;
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(err => {
+        console.warn("Fullscreen request denied: ", err.message);
+      });
+    }
+
     try {
+      const actualInstructorId = (instructorId && instructorId !== 'undefined' && instructorId !== 'null')
+        ? instructorId
+        : (exam.instructor_id || localStorage.getItem('active_instructor_id') || '');
+
       const res = await axios.post(`${API_BASE}/student/${currentUser.userId}/exams/${exam.exam_id}/start`, {
-        instructor_id: String(instructorId)
+        instructor_id: String(actualInstructorId)
       }, getHeaders());
 
       setActiveExam({
         ...res.data,
-        instructor_id: String(instructorId || res.data.instructor_id),
+        instructor_id: String(actualInstructorId || res.data.instructor_id),
         exam_name: res.data.exam_name || exam.exam_name
       });
       setActiveAttemptId(res.data.attempt_id);
@@ -486,21 +660,34 @@ export default function App() {
     }
   };
 
-  const handleExamSubmit = async () => {
+  const handleExamSubmit = async (isDisqualified = false) => {
     if (!activeExam) return;
+    const disqualifiedFlag = isDisqualified === true;
     try {
       // Find the instructor ID for this exam
-      const instructorId = activeExam.instructor_id || localStorage.getItem('active_instructor_id');
-      if (!instructorId || instructorId === 'null' || instructorId === 'undefined') {
-        alert('Error: Instructor ID missing for this exam session.');
-        return;
+      let instructorId = activeExam.instructor_id || localStorage.getItem('active_instructor_id') || '';
+      if (instructorId === 'null' || instructorId === 'undefined') {
+        instructorId = '';
       }
+
       const res = await axios.post(`${API_BASE}/student/${currentUser.userId}/exams/${activeExam.exam_id}/submit`, {
         attempt_id: activeAttemptId,
-        instructor_id: String(instructorId)
+        instructor_id: String(instructorId),
+        disqualified: disqualifiedFlag
       }, getHeaders());
 
-      alert(`Exam submitted!\nScore: ${res.data.result.score}%\nFeedback: ${res.data.feedback}`);
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+      setCameraStream(null);
+      setCameraWarnings(0);
+      setCameraActive(false);
+
+      if (disqualifiedFlag) {
+        alert(`🚨 DISQUALIFICATION: You have been disqualified from this exam due to proctoring webcam violations! Your score is recorded as 0%.`);
+      } else {
+        alert(`Exam submitted!\nScore: ${res.data.result.score}%\nFeedback: ${res.data.feedback}`);
+      }
       setActiveExam(null);
       setActiveAttemptId(null);
       setView('student');
@@ -1274,21 +1461,39 @@ export default function App() {
                           <p style={{ fontWeight: 600, fontSize: '1.05rem' }}>{att.student_name} <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>({att.student_email})</span></p>
                           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
                             Attempt ID: {att.attempt_id} • Status:
-                            <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
-                              {att.status}
-                            </span>
+                            {att.disqualified ? (
+                              <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: 'var(--error)' }}>
+                                Disqualified
+                              </span>
+                            ) : (
+                              <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
+                                {att.status}
+                              </span>
+                            )}
+                            {att.violation_count > 0 && (
+                              <span style={{ marginLeft: '12px', fontSize: '0.8rem', padding: '2px 8px', borderRadius: '4px', background: att.violation_count >= 3 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)', color: att.violation_count >= 3 ? 'var(--error)' : 'var(--warning)', fontWeight: 700 }}>
+                                {att.violation_count >= 3 ? '🚨 HIGH VIOLATIONS: ' : '⚠️ VIOLATIONS: '} {att.violation_count}
+                              </span>
+                            )}
                           </p>
                         </div>
                         <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
                           <div>
-                            <span style={{ fontSize: '1.3rem', fontWeight: 800, color: att.score >= viewingAttemptsExam.passing_marks ? 'var(--success)' : 'var(--error)' }}>
-                              {att.score}%
-                            </span>
+                            {att.disqualified ? (
+                              <span style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--error)' }}>
+                                0% (DISQ)
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '1.3rem', fontWeight: 800, color: att.score >= viewingAttemptsExam.passing_marks ? 'var(--success)' : 'var(--error)' }}>
+                                {att.score}%
+                              </span>
+                            )}
                           </div>
                           <button
                             className="btn btn-primary"
                             style={{ padding: '8px 14px', fontSize: '0.85rem' }}
                             onClick={() => handleStartEvaluation(att)}
+                            disabled={att.disqualified}
                           >
                             📝 Evaluate / Grade
                           </button>
@@ -1314,6 +1519,24 @@ export default function App() {
                         </h4>
                         <button type="button" className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => setEvaluatingAttempt(null)}>Cancel Evaluation</button>
                       </div>
+
+                      {/* Violation Logs Display */}
+                      {evaluatingAttempt.violations && evaluatingAttempt.violations.length > 0 && (
+                        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '16px', background: 'rgba(239, 68, 68, 0.05)', marginBottom: '20px' }}>
+                          <h5 style={{ fontWeight: 700, color: 'var(--error)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <ShieldAlert size={18} />
+                            <span>Proctoring Violations Logged ({evaluatingAttempt.violation_count})</span>
+                          </h5>
+                          <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'grid', gap: '8px', fontSize: '0.85rem' }}>
+                            {evaluatingAttempt.violations.map((v, vIdx) => (
+                              <div key={vIdx} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: '4px', borderLeft: '3px solid var(--error)' }}>
+                                <span style={{ fontWeight: 600 }}>{v.reason}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>{new Date(v.timestamp).toLocaleTimeString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <form onSubmit={handleSubmitEvaluation}>
                         <div style={{ display: 'grid', gap: '16px', marginBottom: '20px' }}>
@@ -1484,14 +1707,24 @@ export default function App() {
                       <h4 style={{ fontWeight: 600 }}>Exam ID: {att.exam_id}</h4>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
                         Attempt ID: {att.attempt_id} • Status:
-                        <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
-                          {att.status === 'submitted' ? 'Pending Instructor Evaluation' : att.status}
-                        </span>
+                        {att.disqualified ? (
+                          <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: 'var(--error)' }}>
+                            Disqualified
+                          </span>
+                        ) : (
+                          <span style={{ marginLeft: '6px', textTransform: 'uppercase', fontWeight: 700, color: att.status === 'graded' ? 'var(--success)' : 'var(--warning)' }}>
+                            {att.status === 'submitted' ? 'Pending Instructor Evaluation' : att.status}
+                          </span>
+                        )}
                       </p>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Started: {new Date(att.start_time).toLocaleString()}</p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      {att.status === 'graded' ? (
+                      {att.disqualified ? (
+                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--error)', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 10px', borderRadius: 'var(--radius-sm)' }}>
+                          DISQUALIFIED
+                        </span>
+                      ) : att.status === 'graded' ? (
                         <span style={{ fontSize: '1.4rem', fontWeight: 800, color: att.score >= 40 ? 'var(--success)' : 'var(--error)' }}>
                           {att.score}%
                         </span>
@@ -1513,7 +1746,30 @@ export default function App() {
       {/* ACTIVE EXAM RUNNER */}
       {view === 'exam-runner' && activeExam && (
         <div className="animate-fade-in" style={{ flex: 1, padding: '40px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+          {/* Floating Camera Preview Overlay */}
+          {cameraStream && (
+            <div style={{ position: 'fixed', bottom: '20px', right: '20px', width: '180px', height: '135px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: cameraActive ? '3px solid var(--primary)' : '3px solid var(--error)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', zIndex: 1000, background: '#000' }}>
+              <video
+                ref={el => { if (el && cameraStream) el.srcObject = cameraStream; }}
+                autoPlay
+                playsInline
+                muted
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div style={{ position: 'absolute', top: '5px', left: '5px', padding: '2px 6px', background: cameraActive ? 'rgba(16,185,129,0.85)' : 'rgba(239,68,68,0.85)', color: '#fff', fontSize: '0.65rem', fontWeight: 700, borderRadius: '4px', textTransform: 'uppercase' }}>
+                {cameraActive ? 'Live Proctor' : 'Off'}
+              </div>
+            </div>
+          )}
+
           <div className="glass-card" style={{ padding: '30px' }}>
+            {/* Camera Warning Banner */}
+            {!cameraActive && (
+              <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)', padding: '12px 16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', fontWeight: 700, border: '1px solid var(--error)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ShieldAlert size={20} />
+                <span>🚨 WEBCAM INACTIVE: Please enable/unblock your camera! Warning {cameraWarnings} of 3. You will be disqualified if not resolved.</span>
+              </div>
+            )}
             {/* Header / Info Panel */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', marginBottom: '24px' }}>
               <div>
@@ -1605,7 +1861,7 @@ export default function App() {
             </div>
 
             {/* Submission Block */}
-            <button className="btn btn-primary" style={{ width: '100%', marginTop: '30px', padding: '16px' }} onClick={handleExamSubmit}>
+            <button className="btn btn-primary" style={{ width: '100%', marginTop: '30px', padding: '16px' }} onClick={() => handleExamSubmit(false)}>
               <span>Submit Exam Paper</span>
             </button>
           </div>

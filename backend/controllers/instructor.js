@@ -1,6 +1,10 @@
 const Exam = require('../models/Exam');
 const User = require('../models/User');
 const Attempt = require('../models/Attempt');
+const MoodleAPIClient = require('../moodle_api/client');
+
+// Initialize Moodle API Client
+const moodleClient = new MoodleAPIClient(process.env.MOODLE_URL, process.env.MOODLE_TOKEN);
 
 exports.initInstructor = async (req, res) => {
   try {
@@ -31,6 +35,18 @@ exports.createExam = async (req, res) => {
 
     if (!course_id || !exam_name) {
       return res.status(400).json({ error: 'course_id and exam_name required' });
+    }
+
+    // Verify course exists in Moodle API
+    try {
+      const courses = await moodleClient.getCourses([parseInt(course_id)]);
+      if (!courses || courses.length === 0) {
+        console.warn(`Warning: Course ID ${course_id} not found in Moodle courses.`);
+      } else {
+        console.log(`Verified course with Moodle: ${courses[0].fullname}`);
+      }
+    } catch (err) {
+      console.warn(`Moodle course verification failed: ${err.message}`);
     }
 
     const intendedTotal = total_marks ? parseInt(total_marks) : 100;

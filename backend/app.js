@@ -62,6 +62,7 @@ app.post('/api/student/:student_id/exams/:exam_id/start', studentController.star
 app.post('/api/student/:student_id/exams/:exam_id/submit-answer', studentController.submitAnswer);
 app.get('/api/student/:student_id/exams/:exam_id/time-remaining', studentController.getTimeRemaining);
 app.post('/api/student/:student_id/exams/:exam_id/submit', studentController.submitExam);
+app.post('/api/student/:student_id/exams/:exam_id/violation', studentController.recordViolation);
 app.get('/api/student/:student_id/attempts', studentController.getStudentAttempts);
 
 // ==================== ERROR HANDLERS ====================

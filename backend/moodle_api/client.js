@@ -47,6 +47,13 @@ class MoodleAPIClient {
   }
 
   async getUserProfile(userId) {
+    if (!this.token || this.token === 'your_moodle_token_here' || !this.baseUrl || this.baseUrl.includes('your_moodle_url_here')) {
+      return [{
+        id: userId,
+        fullname: `User ${userId}`,
+        email: `user${userId}@example.com`
+      }];
+    }
     try {
       const result = await this._makeRequest('core_user_get_users', {
         'userids[0]': userId
@@ -70,6 +77,9 @@ class MoodleAPIClient {
   }
 
   async getEnrolledUsers(courseId) {
+    if (!this.token || this.token === 'your_moodle_token_here' || !this.baseUrl || this.baseUrl.includes('your_moodle_url_here')) {
+      return [];
+    }
     try {
       return await this._makeRequest('core_enrol_get_enrolled_users', {
         courseid: courseId
@@ -81,6 +91,9 @@ class MoodleAPIClient {
   }
 
   async getCourses(courseIds = null) {
+    if (!this.token || this.token === 'your_moodle_token_here' || !this.baseUrl || this.baseUrl.includes('your_moodle_url_here')) {
+      return [];
+    }
     const params = {};
     if (courseIds && courseIds.length > 0) {
       courseIds.forEach((id, index) => {

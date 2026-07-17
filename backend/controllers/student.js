@@ -1,6 +1,10 @@
 const Exam = require('../models/Exam');
 const Attempt = require('../models/Attempt');
 const User = require('../models/User');
+const MoodleAPIClient = require('../moodle_api/client');
+
+// Initialize Moodle API Client
+const moodleClient = new MoodleAPIClient(process.env.MOODLE_URL, process.env.MOODLE_TOKEN);
 
 exports.initStudent = async (req, res) => {
   try {
@@ -69,8 +73,39 @@ exports.startExam = async (req, res) => {
       return res.status(403).json({ error: 'Exam is not active' });
     }
 
-    if (!exam.eligible_students.includes(student_id)) {
-      return res.status(403).json({ error: 'Student not eligible for this exam' });
+    // Check local eligibility list first, fall back to Moodle course enrollment
+    let isEligible = exam.eligible_students.includes(student_id);
+    if (!isEligible) {
+      try {
+        const enrolled = await moodleClient.isUserEnrolled(exam.course_id, student_id);
+        if (enrolled) {
+          isEligible = true;
+          // Dynamically add student to local eligibility list for performance caching
+          exam.eligible_students.push(student_id);
+          await exam.save();
+        }
+      } catch (err) {
+        console.warn(`Moodle course enrollment check failed: ${err.message}`);
+      }
+    }
+
+    if (!isEligible) {
+      return res.status(403).json({ error: 'Student not enrolled or eligible for this exam' });
+    }
+
+    // Sync student details from Moodle to local User database
+    try {
+      const moodleProfiles = await moodleClient.getUserProfile(student_id);
+      if (moodleProfiles && moodleProfiles.length > 0) {
+        const profile = moodleProfiles[0];
+        await User.findOneAndUpdate(
+          { userId: student_id },
+          { fullname: profile.fullname, email: profile.email },
+          { new: true, upsert: false }
+        );
+      }
+    } catch (err) {
+      console.warn(`Could not sync student details from Moodle: ${err.message}`);
     }
 
     // Check if there is an in-progress attempt
@@ -196,7 +231,7 @@ exports.submitExam = async (req, res) => {
   try {
     const student_id = String(req.params.student_id);
     const exam_id = parseInt(req.params.exam_id);
-    const { attempt_id, instructor_id } = req.body;
+    const { attempt_id, instructor_id, disqualified } = req.body;
 
     if (attempt_id === undefined) {
       return res.status(400).json({ error: 'attempt_id required' });
@@ -214,6 +249,30 @@ exports.submitExam = async (req, res) => {
 
     if (attempt.status !== 'in_progress') {
       return res.status(400).json({ error: 'Attempt already submitted' });
+    }
+
+    if (disqualified) {
+      attempt.score = 0;
+      attempt.status = 'graded';
+      attempt.disqualified = true;
+      attempt.end_time = new Date();
+      await attempt.save();
+
+      return res.status(200).json({
+        message: 'Exam terminated due to proctoring disqualification.',
+        result: {
+          attempt_id: attempt.attempt_id,
+          student_id,
+          exam_id,
+          score: 0,
+          passing_marks: exam.passing_marks,
+          is_passed: false,
+          status: 'graded',
+          disqualified: true,
+          submission_time: attempt.end_time.toISOString()
+        },
+        feedback: "Disqualified: Student violated proctoring rules during the exam."
+      });
     }
 
     // Calculate score
@@ -311,6 +370,41 @@ exports.getOngoingExams = async (req, res) => {
       message: 'Ongoing exams retrieved',
       count: filteredExams.length,
       exams: filteredExams
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.recordViolation = async (req, res) => {
+  try {
+    const student_id = String(req.params.student_id);
+    const exam_id = parseInt(req.params.exam_id);
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({ error: 'reason required' });
+    }
+
+    const attempt = await Attempt.findOne({ student_id, exam_id, status: 'in_progress' });
+    if (!attempt) {
+      return res.status(404).json({ error: 'Active exam attempt not found' });
+    }
+
+    if (!attempt.violations) {
+      attempt.violations = [];
+    }
+
+    attempt.violations.push({
+      timestamp: new Date(),
+      reason
+    });
+    attempt.violation_count = (attempt.violation_count || 0) + 1;
+    await attempt.save();
+
+    return res.status(200).json({
+      message: 'Violation recorded successfully',
+      violation_count: attempt.violation_count
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

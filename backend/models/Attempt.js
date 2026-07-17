@@ -39,6 +39,18 @@ const AttemptSchema = new mongoose.Schema({
     type: String,
     enum: ['in_progress', 'submitted', 'graded'],
     default: 'in_progress'
+  },
+  violations: [{
+    timestamp: { type: Date, default: Date.now },
+    reason: { type: String, required: true }
+  }],
+  violation_count: {
+    type: Number,
+    default: 0
+  },
+  disqualified: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
